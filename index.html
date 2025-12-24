@@ -1,1 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>全功能题库系统 V8.0</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
+    <style>
+        :root { --primary: #4A90E2; --bg: #f8f9fa; --success: #27ae60; --error: #e74c3c; --selected: #e1f0ff; }
+        body { font-family: 'PingFang SC', sans-serif; background: var(--bg); margin: 0; padding: 10px; }
+        .container { max-width: 600px; margin: 10px auto; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 5px 25px rgba(0,0,0,0.1); }
+        .header { text-align: center; border-bottom: 2px solid #eee; margin-bottom: 15px; padding-bottom: 10px; }
+        .hidden { display: none; }
+        .q-type { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; margin-bottom: 10px; background: #eee; }
+        .q-text { font-size: 1.15rem; font-weight: bold; color: #333; margin-bottom: 20px; line-height: 1.5; }
+        .opt-list { display: grid; gap: 10px; }
+        .opt-item { padding: 15px; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; transition: 0.2s; background: #fff; display: flex; align-items: flex-start; }
+        .opt-item.selected { background: var(--selected); border-color: var(--primary); }
+        .opt-item.correct { background: var(--success) !important; color: white; border-color: var(--success); }
+        .opt-item.wrong { background: var(--error) !important; color: white; border-color: var(--error); }
+        .nav-group { display: flex; gap: 10px; margin-top: 20px; }
+        .nav-btn { flex: 1; padding: 12px; border: 1px solid var(--primary); background: white; color: var(--primary); border-radius: 8px; cursor: pointer; font-weight: bold; }
+        .nav-btn:disabled { border-color: #ccc; color: #ccc; cursor: not-allowed; }
+        .submit-btn { flex: 2; background: var(--primary); color: white; border: none; }
+        .ctrl { margin-top: 15px; display: flex; justify-content: space-between; font-size: 0.85rem; color: #888; }
+    </style>
+</head>
+<body>
 
+<div class="container">
+    <div id="setupUI">
+        <h2 style="text-align:center">📚 导入并随机化</h2>
+        <div style="border: 2px dashed #ccc; padding: 30px; text-align: center; border-radius: 10px;">
+            <input type="file" id="excelFile" accept=".xlsx, .xls">
+            <p style="color:#666; font-size:0.9rem">上传后题目和选项将自动全部打乱</p>
+        </div>
+    </div>
+
+    <div id="quizUI" class="hidden">
+        <div class="header">
+            <span id="progressText" style="font-weight:bold; color:var(--primary)"></span>
+        </div>
+        <div id="qType" class="q-type"></div>
+        <div id="qText" class="q-text"></div>
+        <div id="optList" class="opt-list"></div>
+        <div id="ansShow" style="margin-top:15px; padding:10px; border-radius:5px; background:#f0f7f0; display:none; font-size:0.9rem">
+            <b>结果提示：</b> <span id="feedbackText"></span>
+        </div>
+        <div class="nav-group">
+            <button class="nav-btn" id="prevBtn" onclick="changeQ(-1)">上一题</button>
+            <button class="nav-btn submit-btn" id="mainBtn" onclick="handleSubmit()">确认提交</button>
+            <button class="nav-btn" id="nextBtn" onclick="changeQ(1)">下一题</button>
+        </div>
+        <div class="ctrl"><span style="color:#e74c3c;cursor:pointer" onclick="localStorage.clear();location.reload();">清空题库</span></div>
+    </div>
+</div>
+
+<script>
+    let bank = [];
+    let cur = 0;
+    let userAnswers = {};
+
+    document.getElementById('excelFile').onchange = function(e) {
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+            const data = new Uint8Array(ev.target.result);
+            const workbook = XLSX.read(data, {type: 'array'});
+            const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], {header: 1});
+            
+            bank = json.slice(1).map(row => {
+                // 原始选项
+                let rawOpts = [
+                    { id: 'A', text: row[1] }, { id: 'B', text: row[2] },
+                    { id: 'C', text: row[3] }, { id: 'D', text: row[4] }
+                ].filter(o => o.text); // 只保留有内容的选项
+
+                // 记录原始正确答案（字母）
+                let correctLetterStr = String(row[5] || "").toUpperCase().replace(/[^A-D]/g, '');
+                
+                // 将原始选项随机打乱
+                let shuffledOpts = [...rawOpts].sort(() => Math.random() - 0.5);
+
+                return {
+                    q: row[0],
+                    displayOpts: shuffledOpts, // 打乱后的顺序
+                    correctIDs: correctLetterStr.split(''), // 比如 ['A', 'B']
+                    isMulti: correctLetterStr.length > 1
+                };
+            }).filter(r => r.q && r.correctIDs.length > 0).sort(() => Math.random() - 0.5);
+            
+            localStorage.setItem('my_quiz_v8', JSON.stringify(bank));
+            initQuiz();
+        };
+        reader.readAsArrayBuffer(e.target.files[0]);
+    };
+
+    window.onload = function() {
+        const saved = localStorage.getItem('my_quiz_v8');
+        if (saved) { bank = JSON.parse(saved); initQuiz(); }
+    };
+
+    function initQuiz() {
+        document.getElementById('setupUI').classList.add('hidden');
+        document.getElementById('quizUI').classList.remove('hidden');
+        render();
+    }
+
+    function render() {
+        const item = bank[cur];
+        const state = userAnswers[cur] || { selectedIDs: [], submitted: false };
+        
+        document.getElementById('progressText').innerText = `第 ${cur + 1} / ${bank.length} 题`;
+        document.getElementById('qType').innerText = item.isMulti ? "【多选题-选项已打乱】" : "【单选题-选项已打乱】";
+        document.getElementById('qText').innerText = item.q;
+        
+        const list = document.getElementById('optList');
+        list.innerHTML = "";
+        
+        item.displayOpts.forEach((opt, index) => {
+            const btn = document.createElement('div');
+            btn.className = 'opt-item' + (state.selectedIDs.includes(opt.id) ? ' selected' : '');
+            
+            if(state.submitted) {
+                if(item.correctIDs.includes(opt.id)) btn.classList.add('correct');
+                else if(state.selectedIDs.includes(opt.id)) btn.classList.add('wrong');
+            }
+            
+            btn.innerHTML = `<span style="margin-right:10px; font-weight:bold">${String.fromCharCode(65 + index)}.</span> <span>${opt.text}</span>`;
+            btn.onclick = () => { if(!state.submitted) toggleSelect(opt.id); };
+            list.appendChild(btn);
+        });
+
+        document.getElementById('prevBtn').disabled = cur === 0;
+        document.getElementById('nextBtn').disabled = cur === bank.length - 1;
+        const mainBtn = document.getElementById('mainBtn');
+        const ansShow = document.getElementById('ansShow');
+
+        if(state.submitted) {
+            mainBtn.innerText = "已提交";
+            mainBtn.disabled = true;
+            ansShow.style.display = 'block';
+            let isRight = item.correctIDs.every(id => state.selectedIDs.includes(id)) && item.correctIDs.length === state.selectedIDs.length;
+            document.getElementById('feedbackText').innerHTML = isRight ? "<span style='color:green'>正确！</span>" : `<span style='color:red'>错误，正确项是：${item.correctIDs.sort().join(', ')}</span>`;
+        } else {
+            mainBtn.innerText = "确认答案";
+            mainBtn.disabled = false;
+            ansShow.style.display = 'none';
+        }
+    }
+
+    function toggleSelect(optId) {
+        if(!userAnswers[cur]) userAnswers[cur] = { selectedIDs: [], submitted: false };
+        const item = bank[cur];
+        if(item.isMulti) {
+            let sel = userAnswers[cur].selectedIDs;
+            userAnswers[cur].selectedIDs = sel.includes(optId) ? sel.filter(id => id !== optId) : [...sel, optId];
+        } else {
+            userAnswers[cur].selectedIDs = [optId];
+        }
+        render();
+    }
+
+    function handleSubmit() {
+        if(!userAnswers[cur] || userAnswers[cur].selectedIDs.length === 0) return alert("请先选择答案");
+        userAnswers[cur].submitted = true;
+        render();
+    }
+
+    function changeQ(dir) { cur += dir; render(); }
+</script>
+</body>
+</html>
