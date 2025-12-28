@@ -3,150 +3,132 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>马原练习系统-护眼版</title>
+    <title>马原全能刷题系统-错题强化版</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
     <style>
-        /* 护眼调色板 */
-        :root { 
-            --primary: #2D5A27;    /* 深绿色（主要文字和按钮） */
-            --bg: #C7EDCC;         /* 经典的护眼豆沙绿背景 */
-            --card-bg: #EBF5EB;    /* 稍微亮一点的卡片绿色 */
-            --success: #27ae60; 
-            --error: #e74c3c; 
-            --selected: #B3D8B3;   /* 选中时的深绿 */
-        }
-        
+        :root { --primary: #2D5A27; --bg: #C7EDCC; --card-bg: #EBF5EB; --success: #27ae60; --error: #e74c3c; --selected: #B3D8B3; }
         body { font-family: sans-serif; background: var(--bg); margin: 0; padding: 10px; color: #333; }
         .container { max-width: 600px; margin: 10px auto; background: var(--card-bg); padding: 25px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border: 1px solid #B3D8B3; }
         .hidden { display: none; }
-        
-        /* 选项样式 */
-        .opt-item { padding: 15px; border: 1px solid #B3D8B3; border-radius: 8px; cursor: pointer; margin-top:12px; transition: 0.2s; background: #fff; display: flex; align-items: flex-start; }
-        .opt-item:hover { background: #F5FAF5; }
+        .opt-item { padding: 15px; border: 1px solid #B3D8B3; border-radius: 8px; cursor: pointer; margin-top:12px; transition: 0.2s; background: #fff; display: flex; }
         .opt-item.selected { background: var(--selected); border-color: var(--primary); }
         .opt-item.correct { background: var(--success) !important; color: white; }
         .opt-item.wrong { background: var(--error) !important; color: white; }
-        
-        /* 按钮样式 */
         .nav-btn { flex: 1; padding: 12px; border: 1px solid var(--primary); background: #fff; color: var(--primary); border-radius: 8px; cursor: pointer; font-weight: bold; }
-        .nav-btn:disabled { border-color: #ccc; color: #999; cursor: not-allowed; }
-        .dash-btn { padding: 15px; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; width: 100%; font-size: 1.1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        
-        .header-title { text-align:center; color: var(--primary); margin-bottom: 20px; }
-        .q-text { font-size:1.15rem; font-weight:bold; margin-bottom:20px; line-height:1.6; color: #1a331a; }
-        .ctrl-link { text-align:center; font-size:0.85rem; margin-top:30px; color:#666; text-decoration:underline; cursor:pointer; }
+        .dash-btn { padding: 15px; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; width: 100%; font-size: 1.1rem; margin-bottom:10px; }
+        .wrong-btn { padding: 15px; background: #d35400; color: white; border: none; border-radius: 8px; cursor: pointer; width: 100%; font-size: 1.1rem; }
+        .q-text { font-size:1.15rem; font-weight:bold; margin-bottom:20px; line-height:1.6; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <div id="setupUI">
-        <h2 class="header-title">🌿 马原题库练习</h2>
-        <div style="border: 2px dashed #B3D8B3; padding: 30px; text-align: center; border-radius: 10px; background: #fff;">
+        <h2 style="text-align:center; color: var(--primary);">🌿 马原智能复习系统</h2>
+        <div id="importBox" style="border: 2px dashed #B3D8B3; padding: 20px; text-align: center; border-radius: 10px; background: #fff;">
             <input type="file" id="excelFile" accept=".xlsx, .xls">
-            <p id="tip" style="color:#555; margin-top:10px;">点击上方选择你的《马原》Excel文件</p>
+            <p id="tip">请导入马原 Excel 题库</p>
         </div>
-        <div id="readyActions" class="hidden" style="margin-top:25px;">
-            <button class="dash-btn" onclick="startDash(30)">⚡ 随机抽取 30 题 (模拟测验)</button>
-            <button class="nav-btn" style="width:100%; margin-top:15px;" onclick="startNormal()">顺序练习全部 192 题</button>
+        <div id="readyActions" class="hidden" style="margin-top:20px;">
+            <button class="dash-btn" onclick="startQuiz('random', 30)">⚡ 随机抽取 30 题</button>
+            <button class="dash-btn" style="background:#2980b9" onclick="startQuiz('all')">📖 全部 192 题顺序练习</button>
+            <button id="wrongModeBtn" class="wrong-btn" onclick="showWrongMenu()">❌ 进入错题库 (<span id="wrongCount">0</span>)</button>
         </div>
     </div>
 
     <div id="quizUI" class="hidden">
-        <div id="progressText" style="font-weight:bold; color:var(--primary); text-align:center; margin-bottom:15px; font-size: 0.9rem;"></div>
+        <div id="progressText" style="font-weight:bold; color:var(--primary); text-align:center; margin-bottom:10px;"></div>
         <div id="qText" class="q-text"></div>
         <div id="optList"></div>
-        
-        <div id="ansShow" style="margin-top:20px; padding:12px; border-radius:8px; background:#DCECDC; border:1px solid #B3D8B3; display:none;">
-            <b>反馈结果：</b> <span id="feedbackText"></span>
+        <div id="ansShow" style="margin-top:20px; padding:12px; border-radius:8px; background:#DCECDC; display:none;">
+            <b>结果：</b> <span id="feedbackText"></span>
         </div>
-
         <div style="display:flex; gap:12px; margin-top:25px;">
-            <button class="nav-btn" id="prevBtn" onclick="changeQ(-1)">上一题</button>
-            <button class="nav-btn" id="mainBtn" style="background:var(--primary); color:white;" onclick="handleSubmit()">提交答案</button>
-            <button class="nav-btn" id="nextBtn" onclick="changeQ(1)">下一题</button>
+            <button class="nav-btn" onclick="changeQ(-1)">上一题</button>
+            <button class="nav-btn" id="mainBtn" style="background:var(--primary); color:white;" onclick="handleSubmit()">提交</button>
+            <button class="nav-btn" onclick="changeQ(1)">下一题</button>
         </div>
-        
-        <p class="ctrl-link" onclick="if(confirm('确定要清空已存题库吗？')) {localStorage.clear(); location.reload();}">清空数据重新导入</p>
+        <p style="text-align:center; font-size:0.8rem; margin-top:20px; color:#666; cursor:pointer;" onclick="location.reload()">返回主菜单</p>
     </div>
 </div>
 
 <script>
-    let fullBank = []; let currentQuiz = []; let cur = 0; let userAnswers = {};
+    let fullBank = []; // 总库
+    let wrongBank = []; // 错题库
+    let currentQuiz = []; // 本次练习
+    let cur = 0;
+    let userAnswers = {};
 
-    // 自动加载本地缓存
     window.onload = function() {
-        const saved = localStorage.getItem('mayuan_eye_db');
-        if (saved) { 
-            fullBank = JSON.parse(saved); 
-            document.getElementById('readyActions').classList.remove('hidden'); 
-            document.getElementById('tip').innerText = "✅ 题库已加载 (" + fullBank.length + "道题)"; 
+        const savedDB = localStorage.getItem('mayuan_db_v10');
+        const savedWrong = localStorage.getItem('mayuan_wrong_v10');
+        if (savedDB) {
+            fullBank = JSON.parse(savedDB);
+            wrongBank = savedWrong ? JSON.parse(savedWrong) : [];
+            document.getElementById('readyActions').classList.remove('hidden');
+            document.getElementById('wrongCount').innerText = wrongBank.length;
+            document.getElementById('tip').innerText = "题库已载入";
         }
     };
 
-    // 解析 Excel 文件
     document.getElementById('excelFile').onchange = function(e) {
         const reader = new FileReader();
         reader.onload = function(ev) {
-            try {
-                const data = new Uint8Array(ev.target.result);
-                const workbook = XLSX.read(data, {type: 'array'});
-                const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], {header: 1});
-                
-                // 马原数据结构：A题号, B题型, C题目, D-G选项, H答案
-                fullBank = json.slice(1).map(row => {
-                    let ans = String(row[7] || "").toUpperCase().trim();
-                    return {
-                        q: row[2],
-                        opts: [{id:'A', t:row[3]}, {id:'B', t:row[4]}, {id:'C', t:row[5]}, {id:'D', t:row[6]}].filter(o => o.t),
-                        ans: ans,
-                        isMulti: ans.length > 1
-                    };
-                }).filter(r => r.q && r.ans);
-
-                if(fullBank.length === 0) throw "解析失败，请检查文件格式";
-                localStorage.setItem('mayuan_eye_db', JSON.stringify(fullBank));
-                location.reload();
-            } catch(err) { alert("文件读取出错: " + err); }
+            const data = new Uint8Array(ev.target.result);
+            const workbook = XLSX.read(data, {type: 'array'});
+            const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], {header: 1});
+            fullBank = json.slice(1).map(row => {
+                let ans = String(row[7] || "").toUpperCase().trim();
+                return { q: row[2], opts: [{id:'A', t:row[3]}, {id:'B', t:row[4]}, {id:'C', t:row[5]}, {id:'D', t:row[6]}].filter(o => o.t), ans: ans, isMulti: ans.length > 1 };
+            }).filter(r => r.q && r.ans);
+            localStorage.setItem('mayuan_db_v10', JSON.stringify(fullBank));
+            location.reload();
         };
         reader.readAsArrayBuffer(e.target.files[0]);
     };
 
-    // 30题模式
-    function startDash(n) {
-        currentQuiz = [];
-        for(let i=0; i<n; i++) {
-            let item = JSON.parse(JSON.stringify(fullBank[Math.floor(Math.random()*fullBank.length)]));
-            item.displayOpts = item.opts.sort(()=>Math.random()-0.5); // 选项打乱
-            currentQuiz.push(item);
+    function startQuiz(type, num) {
+        if(type === 'random') {
+            currentQuiz = [];
+            for(let i=0; i<num; i++) {
+                let itm = JSON.parse(JSON.stringify(fullBank[Math.floor(Math.random()*fullBank.length)]));
+                itm.displayOpts = itm.opts.sort(()=>Math.random()-0.5);
+                currentQuiz.push(itm);
+            }
+        } else if(type === 'all') {
+            currentQuiz = fullBank.map(i => {
+                let t = JSON.parse(JSON.stringify(i));
+                t.displayOpts = t.opts.sort(()=>Math.random()-0.5);
+                return t;
+            });
         }
         enter();
     }
 
-    // 全部练习模式
-    function startNormal() {
-        currentQuiz = fullBank.map(i => {
-            let t = JSON.parse(JSON.stringify(i));
-            t.displayOpts = t.opts.sort(()=>Math.random()-0.5);
-            return t;
-        }).sort(()=>Math.random()-0.5); // 题目打乱
+    function showWrongMenu() {
+        if(wrongBank.length === 0) return alert("目前没有错题哦！");
+        let n = prompt(`错题库共有 ${wrongBank.length} 题，你想练习多少道？(输入数字，点确定练习全部)`, wrongBank.length);
+        if(n === null) return;
+        let count = Math.min(parseInt(n) || wrongBank.length, wrongBank.length);
+        currentQuiz = [...wrongBank].sort(()=>Math.random()-0.5).slice(0, count).map(i => {
+            i.displayOpts = i.opts.sort(()=>Math.random()-0.5);
+            return i;
+        });
         enter();
     }
 
     function enter() {
         document.getElementById('setupUI').classList.add('hidden');
         document.getElementById('quizUI').classList.remove('hidden');
-        render();
+        cur = 0; userAnswers = {}; render();
     }
 
     function render() {
         const item = currentQuiz[cur];
         const state = userAnswers[cur] || { sel: [], sub: false };
-        
-        document.getElementById('progressText').innerText = `题目 ${cur + 1} / ${currentQuiz.length} [${item.isMulti?'多选题':'单选题'}]`;
+        document.getElementById('progressText').innerText = `第 ${cur + 1} / ${currentQuiz.length} 题`;
         document.getElementById('qText').innerText = item.q;
         const list = document.getElementById('optList'); list.innerHTML = "";
-        
         item.displayOpts.forEach((opt, idx) => {
             const btn = document.createElement('div');
             btn.className = 'opt-item' + (state.sel.includes(opt.id) ? ' selected' : '');
@@ -154,25 +136,43 @@
                 if(item.ans.includes(opt.id)) btn.classList.add('correct');
                 else if(state.sel.includes(opt.id)) btn.classList.add('wrong');
             }
-            btn.innerHTML = `<b style="margin-right:12px; color:var(--primary);">${String.fromCharCode(65+idx)}.</b> <span>${opt.t}</span>`;
+            btn.innerHTML = `<b style="margin-right:10px">${String.fromCharCode(65+idx)}.</b> ${opt.t}`;
             btn.onclick = () => { if(!state.sub) toggle(opt.id); };
             list.appendChild(btn);
         });
-
-        document.getElementById('prevBtn').disabled = cur === 0;
-        document.getElementById('nextBtn').disabled = cur === currentQuiz.length - 1;
         const mb = document.getElementById('mainBtn');
         const as = document.getElementById('ansShow');
-        
         if(state.sub) {
             mb.innerText = "已提交"; mb.disabled = true; as.style.display = 'block';
             let isR = item.ans.split('').sort().join('') === state.sel.sort().join('');
-            document.getElementById('feedbackText').innerHTML = isR ? 
-                "<span style='color:green; font-weight:bold;'>正确 ✅</span>" : 
-                `<span style='color:red; font-weight:bold;'>错误 ❌ 答案是: ${item.ans}</span>`;
+            document.getElementById('feedbackText').innerHTML = isR ? "<span style='color:green'>正确</span>" : `<span style='color:red'>错误，答案: ${item.ans}</span>`;
+            
+            // 错题逻辑处理
+            if(!isR) {
+                addToWrong(item);
+            } else {
+                // 如果在错题模式做对了，询问是否移除
+                if(localStorage.getItem('mayuan_wrong_v10')?.includes(item.q)) {
+                    removeFromWrong(item);
+                }
+            }
         } else {
             mb.innerText = "提交答案"; mb.disabled = false; as.style.display = 'none';
         }
+    }
+
+    function addToWrong(item) {
+        if(!wrongBank.find(x => x.q === item.q)) {
+            wrongBank.push(item);
+            localStorage.setItem('mayuan_wrong_v10', JSON.stringify(wrongBank));
+            document.getElementById('wrongCount').innerText = wrongBank.length;
+        }
+    }
+
+    function removeFromWrong(item) {
+        wrongBank = wrongBank.filter(x => x.q !== item.q);
+        localStorage.setItem('mayuan_wrong_v10', JSON.stringify(wrongBank));
+        document.getElementById('wrongCount').innerText = wrongBank.length;
     }
 
     function toggle(id) {
@@ -185,11 +185,11 @@
     }
 
     function handleSubmit() {
-        if(!userAnswers[cur] || userAnswers[cur].sel.length === 0) { alert("请先选择选项"); return; }
+        if(!userAnswers[cur] || userAnswers[cur].sel.length === 0) return;
         userAnswers[cur].sub = true; render();
     }
 
-    function changeQ(d) { cur += d; render(); }
+    function changeQ(d) { if(cur+d >=0 && cur+d < currentQuiz.length) { cur += d; render(); } }
 </script>
 </body>
 </html>
