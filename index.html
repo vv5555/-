@@ -3,13 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>马原全能刷题系统-错题强化版</title>
+    <title>马原全能刷题系统-最终修正版</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
     <style>
-        :root { --primary: #2D5A27; --bg: #C7EDCC; --card-bg: #EBF5EB; --success: #27ae60; --error: #e74c3c; --selected: #B3D8B3; }
+        :root { --primary: #2D5A27; --bg: #C7EDCC; --card-bg: #EBF5EB; --success: #27ae60; --error: #e74c3c; --selected: #B3D8B3; --multi: #e67e22; }
         body { font-family: sans-serif; background: var(--bg); margin: 0; padding: 10px; color: #333; }
         .container { max-width: 600px; margin: 10px auto; background: var(--card-bg); padding: 25px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border: 1px solid #B3D8B3; }
         .hidden { display: none; }
+        /* 题型标签样式 */
+        .q-tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 0.85rem; font-weight: bold; margin-bottom: 10px; background: #fff; border: 1px solid #ddd; }
         .opt-item { padding: 15px; border: 1px solid #B3D8B3; border-radius: 8px; cursor: pointer; margin-top:12px; transition: 0.2s; background: #fff; display: flex; }
         .opt-item.selected { background: var(--selected); border-color: var(--primary); }
         .opt-item.correct { background: var(--success) !important; color: white; }
@@ -27,7 +29,7 @@
         <h2 style="text-align:center; color: var(--primary);">🌿 马原智能复习系统</h2>
         <div id="importBox" style="border: 2px dashed #B3D8B3; padding: 20px; text-align: center; border-radius: 10px; background: #fff;">
             <input type="file" id="excelFile" accept=".xlsx, .xls">
-            <p id="tip">请导入马原 Excel 题库</p>
+            <p id="tip">请选择马原 Excel 题库</p>
         </div>
         <div id="readyActions" class="hidden" style="margin-top:20px;">
             <button class="dash-btn" onclick="startQuiz('random', 30)">⚡ 随机抽取 30 题</button>
@@ -37,15 +39,16 @@
     </div>
 
     <div id="quizUI" class="hidden">
-        <div id="progressText" style="font-weight:bold; color:var(--primary); text-align:center; margin-bottom:10px;"></div>
+        <div id="progressText" style="color:var(--primary); text-align:center; margin-bottom:5px; font-size: 0.9rem;"></div>
+        <div style="text-align:center;"><span id="qTag" class="q-tag"></span></div>
         <div id="qText" class="q-text"></div>
         <div id="optList"></div>
         <div id="ansShow" style="margin-top:20px; padding:12px; border-radius:8px; background:#DCECDC; display:none;">
-            <b>结果：</b> <span id="feedbackText"></span>
+            <b>结果提示：</b> <span id="feedbackText"></span>
         </div>
         <div style="display:flex; gap:12px; margin-top:25px;">
             <button class="nav-btn" onclick="changeQ(-1)">上一题</button>
-            <button class="nav-btn" id="mainBtn" style="background:var(--primary); color:white;" onclick="handleSubmit()">提交</button>
+            <button class="nav-btn" id="mainBtn" style="background:var(--primary); color:white;" onclick="handleSubmit()">提交答案</button>
             <button class="nav-btn" onclick="changeQ(1)">下一题</button>
         </div>
         <p style="text-align:center; font-size:0.8rem; margin-top:20px; color:#666; cursor:pointer;" onclick="location.reload()">返回主菜单</p>
@@ -53,21 +56,17 @@
 </div>
 
 <script>
-    let fullBank = []; // 总库
-    let wrongBank = []; // 错题库
-    let currentQuiz = []; // 本次练习
-    let cur = 0;
-    let userAnswers = {};
+    let fullBank = []; let wrongBank = []; let currentQuiz = []; let cur = 0; let userAnswers = {};
 
     window.onload = function() {
-        const savedDB = localStorage.getItem('mayuan_db_v10');
-        const savedWrong = localStorage.getItem('mayuan_wrong_v10');
+        const savedDB = localStorage.getItem('mayuan_db_v11');
+        const savedWrong = localStorage.getItem('mayuan_wrong_v11');
         if (savedDB) {
             fullBank = JSON.parse(savedDB);
             wrongBank = savedWrong ? JSON.parse(savedWrong) : [];
             document.getElementById('readyActions').classList.remove('hidden');
             document.getElementById('wrongCount').innerText = wrongBank.length;
-            document.getElementById('tip').innerText = "题库已载入";
+            document.getElementById('tip').innerText = "✅ 题库已就绪";
         }
     };
 
@@ -81,7 +80,7 @@
                 let ans = String(row[7] || "").toUpperCase().trim();
                 return { q: row[2], opts: [{id:'A', t:row[3]}, {id:'B', t:row[4]}, {id:'C', t:row[5]}, {id:'D', t:row[6]}].filter(o => o.t), ans: ans, isMulti: ans.length > 1 };
             }).filter(r => r.q && r.ans);
-            localStorage.setItem('mayuan_db_v10', JSON.stringify(fullBank));
+            localStorage.setItem('mayuan_db_v11', JSON.stringify(fullBank));
             location.reload();
         };
         reader.readAsArrayBuffer(e.target.files[0]);
@@ -95,24 +94,24 @@
                 itm.displayOpts = itm.opts.sort(()=>Math.random()-0.5);
                 currentQuiz.push(itm);
             }
-        } else if(type === 'all') {
+        } else {
             currentQuiz = fullBank.map(i => {
                 let t = JSON.parse(JSON.stringify(i));
                 t.displayOpts = t.opts.sort(()=>Math.random()-0.5);
                 return t;
-            });
+            }).sort(()=>Math.random()-0.5);
         }
         enter();
     }
 
     function showWrongMenu() {
         if(wrongBank.length === 0) return alert("目前没有错题哦！");
-        let n = prompt(`错题库共有 ${wrongBank.length} 题，你想练习多少道？(输入数字，点确定练习全部)`, wrongBank.length);
+        let n = prompt(`错题库共有 ${wrongBank.length} 题，你想抽练多少道？`, wrongBank.length);
         if(n === null) return;
-        let count = Math.min(parseInt(n) || wrongBank.length, wrongBank.length);
-        currentQuiz = [...wrongBank].sort(()=>Math.random()-0.5).slice(0, count).map(i => {
-            i.displayOpts = i.opts.sort(()=>Math.random()-0.5);
-            return i;
+        currentQuiz = [...wrongBank].sort(()=>Math.random()-0.5).slice(0, parseInt(n) || wrongBank.length).map(i => {
+            let t = JSON.parse(JSON.stringify(i));
+            t.displayOpts = t.opts.sort(()=>Math.random()-0.5);
+            return t;
         });
         enter();
     }
@@ -126,9 +125,17 @@
     function render() {
         const item = currentQuiz[cur];
         const state = userAnswers[cur] || { sel: [], sub: false };
-        document.getElementById('progressText').innerText = `第 ${cur + 1} / ${currentQuiz.length} 题`;
+        
+        // 恢复指示灯逻辑
+        document.getElementById('progressText').innerText = `进度：${cur + 1} / ${currentQuiz.length}`;
+        const tag = document.getElementById('qTag');
+        tag.innerText = item.isMulti ? "【多选题】" : "【单选题】";
+        tag.style.color = item.isMulti ? "var(--multi)" : "var(--primary)";
+        tag.style.borderColor = item.isMulti ? "var(--multi)" : "var(--primary)";
+
         document.getElementById('qText').innerText = item.q;
         const list = document.getElementById('optList'); list.innerHTML = "";
+        
         item.displayOpts.forEach((opt, idx) => {
             const btn = document.createElement('div');
             btn.className = 'opt-item' + (state.sel.includes(opt.id) ? ' selected' : '');
@@ -140,38 +147,35 @@
             btn.onclick = () => { if(!state.sub) toggle(opt.id); };
             list.appendChild(btn);
         });
+
         const mb = document.getElementById('mainBtn');
         const as = document.getElementById('ansShow');
         if(state.sub) {
             mb.innerText = "已提交"; mb.disabled = true; as.style.display = 'block';
             let isR = item.ans.split('').sort().join('') === state.sel.sort().join('');
-            document.getElementById('feedbackText').innerHTML = isR ? "<span style='color:green'>正确</span>" : `<span style='color:red'>错误，答案: ${item.ans}</span>`;
+            document.getElementById('feedbackText').innerHTML = isR ? 
+                "<span style='color:green;font-weight:bold'>正确 ✅</span>" : 
+                `<span style='color:red;font-weight:bold'>错误 ❌ 答案: ${item.ans}</span>`;
             
-            // 错题逻辑处理
-            if(!isR) {
-                addToWrong(item);
-            } else {
-                // 如果在错题模式做对了，询问是否移除
-                if(localStorage.getItem('mayuan_wrong_v10')?.includes(item.q)) {
-                    removeFromWrong(item);
-                }
-            }
+            if(!isR) addToWrong(item);
+            else if(localStorage.getItem('mayuan_wrong_v11')?.includes(item.q)) removeFromWrong(item);
         } else {
-            mb.innerText = "提交答案"; mb.disabled = false; as.style.display = 'none';
+            mb.innerText = item.isMulti ? "提交多选" : "提交答案";
+            mb.disabled = false; as.style.display = 'none';
         }
     }
 
     function addToWrong(item) {
         if(!wrongBank.find(x => x.q === item.q)) {
             wrongBank.push(item);
-            localStorage.setItem('mayuan_wrong_v10', JSON.stringify(wrongBank));
+            localStorage.setItem('mayuan_wrong_v11', JSON.stringify(wrongBank));
             document.getElementById('wrongCount').innerText = wrongBank.length;
         }
     }
 
     function removeFromWrong(item) {
         wrongBank = wrongBank.filter(x => x.q !== item.q);
-        localStorage.setItem('mayuan_wrong_v10', JSON.stringify(wrongBank));
+        localStorage.setItem('mayuan_wrong_v11', JSON.stringify(wrongBank));
         document.getElementById('wrongCount').innerText = wrongBank.length;
     }
 
